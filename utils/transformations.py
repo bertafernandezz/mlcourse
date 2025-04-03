@@ -194,12 +194,11 @@ class MyTransformation:
         self.low_card_columns = ["city"] + self.bin_vars_columns.to_list()
         print("low_card_columns shape: ", len(self.low_card_columns))
 
+        # Se inicializa el TargetEncoder para las columnas especificadas en target_encode_cols
         if self.target_encode_cols is None:
-            self.target_encode_cols = []
-
-        self.target_encoder = TargetEncoder()
-        self.target_encoder.fit(X_data[self.target_encode_cols], y_data)
-        
+            self.target_encode_cols = []  # Si no se proporciona ninguna columna, se establece como lista vacía
+        self.target_encoder = TargetEncoder()  # Inicializa TargetEncoder
+        self.target_encoder.fit(X_data[self.target_encode_cols], y_data)  # Ajuste del TargetEncoder para las columnas especificadas
 
         self.area_feature = "Area"
         
@@ -218,27 +217,27 @@ class MyTransformation:
 
         X = X.replace({9: np.nan})
 
-        # Convertir self.bin_vars_columns a pandas.DataFrame
+        
         bin_vars_df = pd.DataFrame(X, columns=self.bin_vars_columns)
 
-        # Aplicar replace() a bin_vars_df
+        
         bin_vars_df = bin_vars_df.replace({0: "NO", 1: "SI", np.nan: "NO_DISPONIBLE"})
 
-        # Asignar las columnas transformadas de vuelta a X (una por una)
         for col in self.bin_vars_columns:
-            X[col] = bin_vars_df[col]  # Asignar cada columna individualmente
+            X[col] = bin_vars_df[col]  
 
-        X[self.beds_feaures] = self.imputer.transform(X[[self.beds_feaures]])
+        X[self.beds_feaures] = self.imputer.transform(X[[self.beds_feaures]])  
         print("X shape: ", X.shape)
 
-        # Transformar las columnas especificadas con TargetEncoder
-        X_target_encoded_dfs =  self.target_encoder.transform(X[self.target_encode_cols])
+        #T ransformación de las columnas especificadas con TargetEncoder
+        X_target_encoded_dfs =  self.target_encoder.transform(X[self.target_encode_cols])  # Transformación con TargetEncoder
         X_target_encoded = pd.DataFrame(
             data=X_target_encoded_dfs,
-            columns=self.target_encoder.get_feature_names_out(),
+            columns=self.target_encoder.get_feature_names_out(),  # Nombres de las nuevas columnas codificadas
             index=X.index,
         )
-        #Convertir y a DataFrame antes de transformarlo
+
+        
         y_df = pd.DataFrame(y)
         y_transformed = self.y_Transformer.transform(y_df)
 
@@ -256,7 +255,8 @@ class MyTransformation:
             },
             index=X.index,
         )
-        features_to_cross = pd.concat([X_target_encoded, X_num], axis=1)  # Usar X_target_encoded
+        # Concatenación de las características numéricas y las codificadas con TargetEncoder
+        features_to_cross = pd.concat([X_target_encoded, X_num], axis=1)  # Usar X_target_encoded con las características codificadas
         self.polyfeatures.fit(features_to_cross)
         crossed_features = self.polyfeatures.transform(features_to_cross)
 
@@ -267,10 +267,10 @@ class MyTransformation:
         )
         print("X_crossed_features shape: ", X_crossed_features.shape)
 
-        # Inicializar X_EXPANDED antes de usarlo
+        
         X_EXPANDED = None
 
-        if not X_target_encoded.empty:
+        if not X_target_encoded.empty:  
             X_EXPANDED = pd.concat([X_num, X_target_encoded, X_crossed_features], axis=1)
         else:
             X_EXPANDED = pd.concat([X_num, X_crossed_features], axis=1)
