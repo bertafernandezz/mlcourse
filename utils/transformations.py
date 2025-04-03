@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import OneHotEncoder
+from category_encoders import TargetEncoder 
 from skrub import GapEncoder
 from sklearn.preprocessing import QuantileTransformer, StandardScaler
 from sklearn.preprocessing import PolynomialFeatures
@@ -154,3 +155,132 @@ class SimpleTransformation:
         )
         X_final = pd.concat([X.drop(columns=["city"]), X_cat], axis=1)
         return X_final, y
+
+import pandas as pd
+import numpy as np
+from sklearn.impute import SimpleImputer
+from category_encoders import TargetEncoder
+from sklearn.preprocessing import QuantileTransformer, StandardScaler
+from sklearn.preprocessing import PolynomialFeatures
+
+class MyTransformation:
+    def __init__(self, target_encode_cols=None): 
+        self.imputer = SimpleImputer(strategy="median")
+        self.target_encoders = {}  # Diccionario para almacenar los TargetEncoders
+        self.y_Transformer = QuantileTransformer()
+        self.area_Transformer = QuantileTransformer()
+        self.beds_Transformer = QuantileTransformer()
+        self.polyfeatures = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)
+        self.scaler_y = StandardScaler()
+        self.scaler_area = StandardScaler()
+        self.scalar_beds = StandardScaler()
+        self.target_encode_cols = target_encode_cols  # Guarda las columnas a codificar
+        self.bin_vars_columns = None  
+
+    def fit(self, X, y):
+        X_data = X.copy()
+        y_data = y.copy()
+        print("X shape: ", X.shape)
+        self.bin_vars_columns = X.columns[4:]  
+        print("bin_vars_columns shape: ", self.bin_vars_columns.shape)
+
+        self.beds_feaures = "No. of Bedrooms"
+        self.imputer.fit(X_data[[self.beds_feaures]])
+        X_data = X_data.replace({9: np.nan})
+        X_data[self.bin_vars_columns] = X_data[self.bin_vars_columns].replace(
+            {0: "NO", 1: "SI", np.nan: "NO_DISPONIBLE"}
+        )
+
+        self.low_card_columns = ["city"] + self.bin_vars_columns.to_list()
+        print("low_card_columns shape: ", len(self.low_card_columns))
+
+        if self.target_encode_cols is None:
+            self.target_encode_cols = []
+
+        self.target_encoder = TargetEncoder()
+        self.target_encoder.fit(X_data[self.target_encode_cols], y_data)
+        
+
+        self.area_feature = "Area"
+        
+        # Convertir y_data en un DataFrame antes de pasarlo a QuantileTransformer
+        self.y_Transformer.fit(pd.DataFrame(y_data))
+        self.area_Transformer.fit(X_data[[self.area_feature]])
+        self.beds_Transformer.fit(X_data[[self.beds_feaures]])
+
+        self.scaler_y.fit(self.y_Transformer.transform(pd.DataFrame(y_data)))
+        self.scaler_area.fit(self.area_Transformer.transform(X_data[[self.area_feature]]))
+        self.scalar_beds.fit(self.beds_Transformer.transform(X_data[[self.beds_feaures]]))
+
+    def transform(self, X_data, y_data):
+        X = X_data.copy()
+        y = y_data.copy()
+
+        X = X.replace({9: np.nan})
+
+        # Convertir self.bin_vars_columns a pandas.DataFrame
+        bin_vars_df = pd.DataFrame(X, columns=self.bin_vars_columns)
+
+        # Aplicar replace() a bin_vars_df
+        bin_vars_df = bin_vars_df.replace({0: "NO", 1: "SI", np.nan: "NO_DISPONIBLE"})
+
+        # Asignar las columnas transformadas de vuelta a X (una por una)
+        for col in self.bin_vars_columns:
+            X[col] = bin_vars_df[col]  # Asignar cada columna individualmente
+
+        X[self.beds_feaures] = self.imputer.transform(X[[self.beds_feaures]])
+        print("X shape: ", X.shape)
+
+        # Transformar las columnas especificadas con TargetEncoder
+        X_target_encoded_dfs =  self.target_encoder.transform(X[self.target_encode_cols])
+        X_target_encoded = pd.DataFrame(
+            data=X_target_encoded_dfs,
+            columns=self.target_encoder.get_feature_names_out(),
+            index=X.index,
+        )
+        #Convertir y a DataFrame antes de transformarlo
+        y_df = pd.DataFrame(y)
+        y_transformed = self.y_Transformer.transform(y_df)
+
+        area_normal = self.area_Transformer.transform(X[[self.area_feature]])
+        beds_normal = self.beds_Transformer.transform(X[[self.beds_feaures]])
+
+        y_scaled = self.scaler_y.transform(y_transformed).flatten() 
+        area_scaled = self.scaler_area.transform(area_normal)
+        beds_scaled = self.scalar_beds.transform(beds_normal)
+
+        X_num = pd.DataFrame(
+            data={
+                self.area_feature: area_scaled.flatten(),
+                self.beds_feaures: beds_scaled.flatten(),
+            },
+            index=X.index,
+        )
+        features_to_cross = pd.concat([X_target_encoded, X_num], axis=1)  # Usar X_target_encoded
+        self.polyfeatures.fit(features_to_cross)
+        crossed_features = self.polyfeatures.transform(features_to_cross)
+
+        X_crossed_features = pd.DataFrame(
+            data=crossed_features,
+            columns=self.polyfeatures.get_feature_names_out(),
+            index=X.index,
+        )
+        print("X_crossed_features shape: ", X_crossed_features.shape)
+
+        # Inicializar X_EXPANDED antes de usarlo
+        X_EXPANDED = None
+
+        if not X_target_encoded.empty:
+            X_EXPANDED = pd.concat([X_num, X_target_encoded, X_crossed_features], axis=1)
+        else:
+            X_EXPANDED = pd.concat([X_num, X_crossed_features], axis=1)
+
+        X_EXPANDED = pd.DataFrame(X_EXPANDED, index=X.index)
+
+        print("X_EXPANDED shape: ", X_EXPANDED.shape)
+        return X_EXPANDED, y_scaled
+
+    def inverse_transform(self, y_data):
+        return self.y_Transformer.inverse_transform(
+            self.scaler_y.inverse_transform(y_data)
+        )

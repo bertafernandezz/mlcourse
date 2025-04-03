@@ -55,3 +55,66 @@ class SimpleFilter:
         print(not_corr.shape)
         X_transformed = self.advanced_filtered.transform(not_corr)
         return X_transformed, y_data
+
+
+import pandas as pd
+import numpy as np
+from sklearn.feature_selection import VarianceThreshold, SelectKBest, mutual_info_regression
+from feature_engine.selection import DropCorrelatedFeatures, DropDuplicateFeatures
+
+class MyFilter:
+
+    def __init__(self, variance_threshold=0.0, corr_threshold=0.9, k_best=10):
+        self.lowVarianceFilter = VarianceThreshold(threshold=variance_threshold)
+        self.filter_duplicates = DropDuplicateFeatures()
+        self.correlated_filter = DropCorrelatedFeatures(threshold=corr_threshold)
+        
+        # Se usa SelectKBest con Mutual Information para seleccionar las mejores características 
+        self.k_best_filter = SelectKBest(score_func=mutual_info_regression, k=k_best)
+
+    def fit(self, X_data, y_data):
+        print(X_data.shape)
+
+        self.lowVarianceFilter.fit(X_data)
+        lv = self.lowVarianceFilter.transform(X_data)
+
+        lv_df = pd.DataFrame(
+            data=lv,
+            columns=self.lowVarianceFilter.get_feature_names_out(),
+            index=X_data.index,
+        )
+        lv_df = lv_df.loc[:, ~lv_df.columns.duplicated()].copy()
+        print(f"Shape después de baja varianza: {lv_df.shape}")
+
+        self.filter_duplicates.fit(lv_df)
+        no_dup = self.filter_duplicates.transform(lv_df)
+        print(f"Shape después de eliminar duplicados: {no_dup.shape}")
+
+        self.correlated_filter.fit(no_dup)
+        not_corr = self.correlated_filter.transform(no_dup)
+        print(f"Shape después de eliminar correlacionadas: {not_corr.shape}")
+
+        # Aplicar Mutual Information con SelectKBest 
+        self.k_best_filter.fit(not_corr, y_data)
+
+    def transform(self, X_data, y_data):
+        X_data = X_data.copy()
+
+        X_data_low = self.lowVarianceFilter.transform(X_data)
+        X_data_low_df = pd.DataFrame(
+            data=X_data_low,
+            columns=self.lowVarianceFilter.get_feature_names_out(),
+            index=X_data.index,
+        )
+        X_data_low_df = X_data_low_df.loc[:, ~X_data_low_df.columns.duplicated()].copy()
+        print(f"Shape después de baja varianza en la transformación: {X_data_low_df.shape}")
+
+        no_dup = self.filter_duplicates.transform(X_data_low_df)
+        print(f"Shape después de eliminar duplicados en la transformación: {no_dup.shape}")
+
+        not_corr = self.correlated_filter.transform(no_dup)
+        print(f"Shape después de eliminar correlacionadas en la transformación: {not_corr.shape}")
+
+        # Aplicamos Mutual Information con SelectKBest 
+        X_transformed = self.k_best_filter.transform(not_corr)
+        return X_transformed, y_data
