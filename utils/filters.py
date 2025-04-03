@@ -94,7 +94,7 @@ class MyFilter:
         not_corr = self.correlated_filter.transform(no_dup)
         print(f"Shape después de eliminar correlacionadas: {not_corr.shape}")
 
-        # Aplicar Mutual Information con SelectKBest 
+        # Aplicamos Mutual Information con SelectKBest 
         self.k_best_filter.fit(not_corr, y_data)
 
     def transform(self, X_data, y_data):
